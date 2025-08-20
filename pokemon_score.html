@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pokémon Score</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Tailwind CSS (CDN) só para visual estilizado; o app funciona sem build -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* barra de progresso simples */
+    .progress { height: 10px; background: #e5e7eb; border-radius: 9999px; overflow: hidden; }
+    .progress > div { height: 100%; width: 0%; background: #1e84c9; transition: width .4s; }
+    .mono { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div class="max-w-6xl mx-auto p-4 sm:p-8">
+    <header class="mb-6 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+      <h1 class="text-2xl sm:text-3xl font-bold">Pokémon Score</h1>
+      <span class="text-sm text-slate-500"></span>
+    </header>
+
+    <!-- Tabs -->
+    <div class="mb-6 flex gap-2">
+      <button id="tab-teacher" class="px-4 py-2 rounded-full bg-blue-600 text-white shadow">Painel do Professor</button>
+      <button id="tab-viewer" class="px-4 py-2 rounded-full bg-white border">Visor da Turma</button>
+      <div class="flex-1"></div>
+      <button id="btn-export" class="px-3 py-2 rounded-lg border">Exportar JSON</button>
+      <label class="px-3 py-2 rounded-lg border cursor-pointer">
+        Importar JSON
+        <input id="file-import" type="file" accept="application/json" class="hidden" />
+      </label>
+      <button id="btn-reset" class="px-3 py-2 rounded-lg border text-red-600">Zerar (limpar dados)</button>
+    </div>
+
+    <!-- Painel do Professor -->
+    <section id="teacher" class="grid gap-6">
+      <!-- Cadastro de aluno -->
+      <div class="bg-white rounded-2xl shadow p-4 sm:p-6">
+        <h2 class="text-xl font-semibold mb-3">Cadastrar aluno</h2>
+        <form id="form-add-student" class="grid sm:grid-cols-3 gap-3">
+          <input required name="name" placeholder="Nome do aluno" class="border rounded-lg px-3 py-2" />
+          <select required name="species" class="border rounded-lg px-3 py-2">
+            <!-- opções preenchidas via JS com base nas cadeias evolutivas -->
+          </select>
+          <button class="bg-blue-600 text-white rounded-lg px-4 py-2">Adicionar</button>
+        </form>
+      </div>
+
+      <!-- Registrar atividade -->
+      <div class="bg-white rounded-2xl shadow p-4 sm:p-6">
+        <h2 class="text-xl font-semibold mb-3">Registrar atividade</h2>
+        <form id="form-add-activity" class="grid sm:grid-cols-4 gap-3">
+          <select required name="studentId" class="border rounded-lg px-3 py-2"></select>
+          <input required name="title" placeholder="Descrição (ex.: Lista 1, Prova)" class="border rounded-lg px-3 py-2" />
+          <input required name="points" type="number" step="1" min="0" placeholder="Pontos" class="border rounded-lg px-3 py-2" />
+          <button class="bg-orange-600 text-white rounded-lg px-4 py-2">Adicionar pontos</button>
+        </form>
+      </div>
+
+      <!-- Tabela de alunos -->
+      <div class="bg-white rounded-2xl shadow p-0 overflow-hidden">
+        <div class="px-4 sm:px-6 py-4 border-b flex items-center justify-between">
+          <h2 class="text-xl font-semibold">Alunos e evolução</h2>
+          <div class="text-sm text-slate-500">Clique nos 3 pontos de um aluno para ver histórico/editar</div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-100">
+              <tr>
+                <th class="text-left px-4 py-3">Aluno</th>
+                <th class="text-left px-4 py-3">Pokémon</th>
+                <th class="text-left px-4 py-3">Evolução</th>
+                <th class="text-right px-4 py-3">Pontos</th>
+                <th class="text-left px-4 py-3">Progresso</th>
+                <th class="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody id="students-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Visor da Turma -->
+    <section id="viewer" class="hidden grid gap-6">
+      <div class="bg-white rounded-2xl shadow p-4 sm:p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-semibold">Ranking da turma</h2>
+          <span id="dataset-summary" class="text-sm text-slate-500"></span>
+        </div>
+        <div id="ranking" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal -->
+  <dialog id="modal" class="rounded-xl p-0 w-full max-w-xl">
+    <form method="dialog" class="p-0">
+      <div class="p-4 sm:p-6 border-b flex items-center justify-between">
+        <h3 id="modal-title" class="text-lg font-semibold"></h3>
+        <button class="px-3 py-1 rounded-md border">Fechar</button>
+      </div>
+      <div id="modal-body" class="p-4 sm:p-6"></div>
+    </form>
+  </dialog>
+
+  <script>
+    // ======== MODELO DE DADOS (JSON) ========
+    // tudo vive sob uma ÚNICA chave no localStorage, simulando um "objeto vinculado"
+    const STORAGE_KEY = "pokeclasse.v1";
+
+    // Cadeias evolutivas e regras (edite à vontade)
+    // thresholds: pontos mínimos necessários para alcançar cada estágio.
+    const POKE_RULES = {
+      chains: {
+        Bulbasaur: ["Bulbasaur", "Ivysaur", "Venusaur"],
+        Charmander: ["Charmander", "Charmeleon", "Charizard"],
+        Squirtle: ["Squirtle", "Wartortle", "Blastoise"],  // exemplo simples de 3 estágios
+      },
+      // Mapa de thresholds por cadeia (se a cadeia não estiver aqui, usa default)
+      thresholds: {
+        default: [0, 50, 120],         // 0–49 -> estágio 1; 50–119 -> estágio 2; 120+ -> estágio 3
+        Pikachu: [0, 40, 100],
+        Eevee: [0, 60, 140]
+      }
+    };
+
+    // ======== ESTADO =========
+    const state = {
+      students: [],   // [{id, name, chainKey, activities: [{title, points, timestamp}], totalPoints}]
+      createdAt: new Date().toISOString(),
+      version: 1
+    };
+
+    // ======== PERSISTÊNCIA ========
+    function loadState() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return saveState(state);
+      try {
+        const data = JSON.parse(raw);
+        // sane defaults
+        data.students ??= [];
+        data.version ??= 1;
+        data.createdAt ??= new Date().toISOString();
+        return data;
+      } catch (e) {
+        console.warn("JSON inválido no storage; repondo estado limpo.");
+        return saveState(state);
+      }
+    }
+    function saveState(s) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+      return s;
+    }
+    let db = loadState();
+
+    // ======== UTIL =========
+    const uid = () => Math.random().toString(36).slice(2, 9);
+    const fmt = (n) => new Intl.NumberFormat('pt-BR').format(n);
+    const dateFmt = (iso) => new Date(iso).toLocaleString();
+
+    function chainOf(key) {
+      // key pode ser o nome do estágio base (Bulbasaur, Charmander...) ou outra chave do objeto
+      return POKE_RULES.chains[key] ?? [key];
+    }
+    function thresholdsFor(key) {
+      return POKE_RULES.thresholds[key] ?? POKE_RULES.thresholds.default;
+    }
+
+    function computeEvolution(chainKey, totalPoints) {
+      const chain = chainOf(chainKey);
+      const th = thresholdsFor(chainKey);
+      let stage = 0; // índice no array chain
+      if (totalPoints >= th[2]) stage = 2;
+      else if (totalPoints >= th[1]) stage = 1;
+      else stage = 0;
+      const current = chain[Math.min(stage, chain.length - 1)];
+      const nextIdx = Math.min(stage + 1, chain.length - 1);
+      const next = chain[nextIdx];
+      const nextThreshold = th[Math.min(nextIdx, th.length - 1)];
+      const prevThreshold = th[Math.max(stage, 0)];
+      const progressNumerator = Math.max(0, totalPoints - prevThreshold);
+      const progressDenominator = Math.max(1, nextThreshold - prevThreshold || 1);
+      const progress = Math.max(0, Math.min(1, progressNumerator / progressDenominator));
+      const maxStage = chain.length - 1;
+      const atMax = stage >= maxStage || totalPoints >= th[maxStage];
+      return { current, stage, next, nextThreshold, progress, atMax };
+    }
+
+    // ======== RENDER ========
+    const selSpecies = document.querySelector('select[name="species"]');
+    const selStudentInActivity = document.querySelector('#form-add-activity select[name="studentId"]');
+    function refreshSpeciesOptions() {
+      selSpecies.innerHTML = Object.keys(POKE_RULES.chains)
+        .map(key => `<option value="${key}">${key} (${chainOf(key).join(" → ")})</option>`).join("");
+    }
+    refreshSpeciesOptions();
+
+    function refreshStudentOptions() {
+      selStudentInActivity.innerHTML = db.students
+        .map(s => `<option value="${s.id}">${s.name}</option>`).join("");
+    }
+
+    function totalPointsOf(student) {
+      return student.activities.reduce((acc, a) => acc + (Number(a.points) || 0), 0);
+    }
+
+    function renderStudentsTable() {
+      const tbody = document.getElementById("students-table");
+      const rows = db.students
+        .map(s => {
+          s.totalPoints = totalPointsOf(s);
+          const evo = computeEvolution(s.chainKey, s.totalPoints);
+          const pct = Math.round(evo.progress * 100);
+          return `
+            <tr class="border-t">
+              <td class="px-4 py-3">${s.name}</td>
+              <td class="px-4 py-3">${chainOf(s.chainKey)[0]}</td>
+              <td class="px-4 py-3">
+                <div class="font-medium">${evo.current}</div>
+                ${evo.atMax ? `<div class="text-xs text-emerald-600">Evolução máxima</div>` : `<div class="text-xs text-slate-500">Próximo: ${evo.next} (${evo.nextThreshold} pts)</div>`}
+              </td>
+              <td class="px-4 py-3 text-right mono">${fmt(s.totalPoints)}</td>
+              <td class="px-4 py-3">
+                <div class="progress"><div style="width:${pct}%"></div></div>
+                <div class="text-xs text-slate-500 mt-1">${pct}% para próxima evolução</div>
+              </td>
+              <td class="px-4 py-3 text-right">
+                <button class="px-2 py-1 rounded-md border" onclick="openStudent('${s.id}')">⋯</button>
+              </td>
+            </tr>
+          `;
+        }).join("");
+      tbody.innerHTML = rows || `<tr><td class="px-4 py-4 text-slate-500" colspan="6">Nenhum aluno cadastrado.</td></tr>`;
+      refreshStudentOptions();
+      renderViewer();
+    }
+
+    function renderViewer() {
+      // Ranking
+      const container = document.getElementById("ranking");
+      const sorted = [...db.students].map(s => ({...s, totalPoints: totalPointsOf(s)}))
+        .sort((a,b) => b.totalPoints - a.totalPoints);
+      const cards = sorted.map((s, i) => {
+        const evo = computeEvolution(s.chainKey, s.totalPoints);
+        const pct = Math.round(evo.progress * 100);
+        return `
+          <div class="rounded-2xl border p-4">
+            <div class="flex items-start justify-between">
+              <div class="text-sm px-2 py-1 rounded-full bg-slate-100">#${i+1}</div>
+              <div class="text-xs text-slate-500">${chainOf(s.chainKey).join(" → ")}</div>
+            </div>
+            <div class="mt-2">
+              <div class="text-lg font-semibold">${s.name}</div>
+              <div class="text-sm">Evolução: <span class="font-medium">${evo.current}</span>${evo.atMax ? ' <span class="text-emerald-600 text-xs">(máx)</span>' : ''}</div>
+              <div class="mono mt-1">Pontos: <span class="font-semibold">${fmt(s.totalPoints)}</span></div>
+              <div class="mt-2 progress"><div style="width:${pct}%"></div></div>
+              <div class="text-xs text-slate-500 mt-1">${pct}% para ${evo.atMax ? '—' : evo.next} (${evo.nextThreshold} pts)</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+      container.innerHTML = cards || `<div class="text-slate-500">Sem dados ainda. Cadastre alunos e atividades no Painel do Professor.</div>`;
+
+      const summary = document.getElementById("dataset-summary");
+      const totalPts = sorted.reduce((acc, s) => acc + s.totalPoints, 0);
+      summary.textContent = `${sorted.length} aluno(s) • ${fmt(totalPts)} ponto(s)`;
+    }
+
+    // ======== MODAL (histórico / edição de aluno) ========
+    const modal = document.getElementById("modal");
+    const modalTitle = document.getElementById("modal-title");
+    const modalBody = document.getElementById("modal-body");
+
+    window.openStudent = (id) => {
+      const s = db.students.find(x => x.id === id);
+      if (!s) return;
+      modalTitle.textContent = `Aluno: ${s.name}`;
+      const evo = computeEvolution(s.chainKey, totalPointsOf(s));
+      modalBody.innerHTML = `
+        <div class="grid gap-3">
+          <div>
+            <div class="text-sm text-slate-500">Pokémon</div>
+            <div class="font-medium">${chainOf(s.chainKey).join(" → ")}</div>
+          </div>
+          <div class="grid sm:grid-cols-3 gap-3">
+            <button class="px-3 py-2 rounded-lg border" onclick="renameStudent('${s.id}')">Renomear</button>
+            <button class="px-3 py-2 rounded-lg border" onclick="changeChain('${s.id}')">Trocar cadeia</button>
+            <button class="px-3 py-2 rounded-lg border text-red-600" onclick="removeStudent('${s.id}')">Remover aluno</button>
+          </div>
+          <div>
+            <div class="text-sm font-semibold mb-1">Atividades</div>
+            <div class="rounded-xl border overflow-hidden">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-100">
+                  <tr><th class="text-left px-3 py-2">Descrição</th><th class="text-right px-3 py-2">Pontos</th><th class="text-left px-3 py-2">Data</th><th class="px-3 py-2"></th></tr>
+                </thead>
+                <tbody>
+                  ${s.activities.map((a, idx) => `
+                    <tr class="border-t">
+                      <td class="px-3 py-2">${a.title}</td>
+                      <td class="px-3 py-2 text-right mono">${fmt(a.points)}</td>
+                      <td class="px-3 py-2">${dateFmt(a.timestamp)}</td>
+                      <td class="px-3 py-2 text-right">
+                        <button class="px-2 py-1 rounded-md border" onclick="removeActivity('${s.id}', ${idx})">Excluir</button>
+                      </td>
+                    </tr>
+                  `).join("") || `<tr><td class="px-3 py-3 text-slate-500" colspan="4">Sem atividades ainda.</td></tr>`}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="text-sm text-slate-500">Evolução atual: <span class="font-medium text-slate-700">${evo.current}</span></div>
+        </div>
+      `;
+      modal.showModal();
+    };
+
+    window.renameStudent = (id) => {
+      const s = db.students.find(x => x.id === id);
+      if (!s) return;
+      const name = prompt("Novo nome do aluno:", s.name);
+      if (!name) return;
+      s.name = name.trim();
+      saveState(db);
+      renderStudentsTable();
+      openStudent(id);
+    };
+
+    window.changeChain = (id) => {
+      const s = db.students.find(x => x.id === id);
+      if (!s) return;
+      const keys = Object.keys(POKE_RULES.chains);
+      const pick = prompt("Trocar para qual cadeia?\n" + keys.join(", "), s.chainKey);
+      if (!pick || !POKE_RULES.chains[pick]) return;
+      s.chainKey = pick;
+      saveState(db);
+      renderStudentsTable();
+      openStudent(id);
+    };
+
+    window.removeStudent = (id) => {
+      if (!confirm("Remover este aluno? Essa ação não pode ser desfeita.")) return;
+      db.students = db.students.filter(x => x.id !== id);
+      saveState(db);
+      renderStudentsTable();
+      modal.close();
+    };
+
+    window.removeActivity = (studentId, idx) => {
+      const s = db.students.find(x => x.id === studentId);
+      if (!s) return;
+      s.activities.splice(idx, 1);
+      saveState(db);
+      renderStudentsTable();
+      openStudent(studentId);
+    };
+
+    // ======== FORM HANDLERS ========
+    document.getElementById("form-add-student").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const name = String(fd.get("name")||"").trim();
+      const species = String(fd.get("species"));
+      if (!name) return;
+      db.students.push({ id: uid(), name, chainKey: species, activities: [] });
+      saveState(db);
+      e.target.reset();
+      refreshStudentOptions();
+      renderStudentsTable();
+    });
+
+    document.getElementById("form-add-activity").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const studentId = String(fd.get("studentId"));
+      const title = String(fd.get("title")||"").trim();
+      const points = Number(fd.get("points")||0);
+      const s = db.students.find(x => x.id === studentId);
+      if (!s) { alert("Aluno não encontrado."); return; }
+      if (!title) { alert("Descreva a atividade."); return; }
+      if (isNaN(points) || points < 0) { alert("Informe pontos válidos (>= 0)."); return; }
+      s.activities.push({ title, points, timestamp: new Date().toISOString() });
+      saveState(db);
+      e.target.reset();
+      renderStudentsTable();
+    });
+
+    // ======== TABS ========
+    const tabTeacher = document.getElementById("tab-teacher");
+    const tabViewer = document.getElementById("tab-viewer");
+    tabTeacher.addEventListener("click", () => {
+      document.getElementById("teacher").classList.remove("hidden");
+      document.getElementById("viewer").classList.add("hidden");
+      tabTeacher.classList.add("bg-blue-600", "text-white");
+      tabViewer.classList.remove("bg-blue-600","text-white"); tabViewer.classList.add("bg-white","text-slate-800");
+    });
+    tabViewer.addEventListener("click", () => {
+      document.getElementById("viewer").classList.remove("hidden");
+      document.getElementById("teacher").classList.add("hidden");
+      tabViewer.classList.add("bg-blue-600","text-white");
+      tabTeacher.classList.remove("bg-blue-600","text-white"); tabTeacher.classList.add("bg-white","text-slate-800");
+    });
+
+    // ======== IMPORT/EXPORT/RESET ========
+    document.getElementById("btn-export").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(db, null, 2)], {type: "application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement("a"), { href: url, download: "pokeclasse-dados.json" });
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    document.getElementById("file-import").addEventListener("change", async (e) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      try {
+        const text = await file.text();
+        const json = JSON.parse(text);
+        if (!json || !Array.isArray(json.students)) throw new Error("Estrutura inválida.");
+        db = json;
+        saveState(db);
+        refreshStudentOptions();
+        renderStudentsTable();
+        alert("Dados importados com sucesso!");
+      } catch (err) {
+        alert("Falha ao importar JSON: " + err.message);
+      } finally {
+        e.target.value = "";
+      }
+    });
+
+    document.getElementById("btn-reset").addEventListener("click", () => {
+      if (!confirm("Isto apagará TODOS os dados salvos no navegador. Continuar?")) return;
+      db = saveState({ students: [], createdAt: new Date().toISOString(), version: 1 });
+      refreshStudentOptions();
+      renderStudentsTable();
+    });
+
+    // ======== BOOT ========
+    (function boot(){
+      refreshStudentOptions();
+      renderStudentsTable();
+    })();
+  </script>
+</body>
+</html>

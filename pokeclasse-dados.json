@@ -1,0 +1,54 @@
+{
+  "students": [
+    {
+      "id": "st1",
+      "name": "Lucas",
+      "chainKey": "Bulbasaur",
+      "activities": [
+        {"title": "Lista 1", "points": 10, "timestamp": "2025-08-01T14:30:00Z"},
+        {"title": "Prova 1", "points": 25, "timestamp": "2025-08-10T10:00:00Z"}
+      ]
+    },
+    {
+      "id": "st2",
+      "name": "Marina",
+      "chainKey": "Charmander",
+      "activities": [
+        {"title": "Trabalho em grupo", "points": 20, "timestamp": "2025-08-05T16:15:00Z"},
+        {"title": "Prova 1", "points": 35, "timestamp": "2025-08-11T09:00:00Z"},
+        {"title": "Lista 2", "points": 15, "timestamp": "2025-08-15T18:00:00Z"}
+      ]
+    },
+    {
+      "id": "st3",
+      "name": "Beatriz",
+      "chainKey": "Squirtle",
+      "activities": [
+        {"title": "Lista 1", "points": 12, "timestamp": "2025-08-03T14:30:00Z"},
+        {"title": "Lista 2", "points": 18, "timestamp": "2025-08-07T12:00:00Z"},
+        {"title": "Prova 1", "points": 40, "timestamp": "2025-08-12T09:30:00Z"}
+      ]
+    },
+    {
+      "id": "st4",
+      "name": "Rafael",
+      "chainKey": "Bulbasaur",
+      "activities": [
+        {"title": "Lista 1", "points": 8, "timestamp": "2025-08-02T14:30:00Z"},
+        {"title": "Prova 1", "points": 20, "timestamp": "2025-08-11T10:30:00Z"},
+        {"title": "Trabalho extra", "points": 25, "timestamp": "2025-08-18T17:00:00Z"}
+      ]
+    },
+    {
+      "id": "st5",
+      "name": "Carolina",
+      "chainKey": "Charmander",
+      "activities": [
+        {"title": "Lista 1", "points": 15, "timestamp": "2025-08-04T13:00:00Z"},
+        {"title": "Prova 1", "points": 28, "timestamp": "2025-08-11T11:00:00Z"}
+      ]
+    }
+  ],
+  "createdAt": "2025-08-20T23:00:00Z",
+  "version": 1
+}
